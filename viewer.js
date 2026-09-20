@@ -4,87 +4,60 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-// VGGT reconstruction scale is arbitrary. 4.8 makes the reconstructed room human-scale.
 const SCENE_SCALE_METERS = 4.8;
-const WALK_SPEED = 0.45; // meters/sec: deliberately slow for comfort.
-const TURN_SPEED = 1.15; // radians/sec
-
+const WALK_SPEED = 0.45;
+const TURN_SPEED = 1.15;
 const status = document.querySelector('#status');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+document.body.append(renderer.domElement, VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070c);
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.02, 100);
+const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.02, 100);
 const player = new THREE.Group();
-player.add(camera);
-scene.add(player);
-
+player.add(camera); scene.add(player);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.target.set(0, 1.4, 0);
-controls.maxDistance = 15;
-controls.minDistance = 0.15;
-
+controls.enableDamping = true; controls.target.set(0, 1.4, 0); controls.maxDistance = 15; controls.minDistance = 0.15;
 let homePosition = new THREE.Vector3(0, 0, 3.7);
 let homeTarget = new THREE.Vector3(0, 1.4, 0);
 let elapsedLast = 0;
 const controllerButtonState = new WeakMap();
 
 function resetHome() {
-  player.position.copy(homePosition);
-  player.rotation.set(0, 0, 0);
-  camera.position.set(0, 1.6, 0);
-  if (!renderer.xr.isPresenting) {
-    controls.target.copy(homeTarget);
-    controls.update();
-  }
+  player.position.copy(homePosition); player.rotation.set(0, 0, 0); camera.position.set(0, 1.6, 0);
+  if (!renderer.xr.isPresenting) { controls.target.copy(homeTarget); controls.update(); }
 }
 document.querySelector('#home').addEventListener('click', resetHome);
-window.addEventListener('keydown', (event) => { if (event.key.toLowerCase() === 'h') resetHome(); });
+addEventListener('keydown', e => { if (e.key.toLowerCase() === 'h') resetHome(); });
 
-const loader = new GLTFLoader();
-loader.load('./dungeon_omega.glb', (gltf) => {
+new GLTFLoader().load('./dungeon_omega.glb', gltf => {
   const model = gltf.scene;
-  let pointCount = 0;
-  let markerCount = 0;
-
-  model.traverse((object) => {
+  let pointCount = 0, markerCount = 0;
+  model.traverse(object => {
     if (object.isPoints) {
       pointCount += object.geometry.attributes.position.count;
-      object.material = new THREE.PointsMaterial({
-        size: 0.012, sizeAttenuation: true, vertexColors: true,
-        depthTest: true, depthWrite: true, transparent: false
-      });
+      object.material = new THREE.PointsMaterial({ size: 0.012, sizeAttenuation: true, vertexColors: true, depthTest: true, depthWrite: true });
     }
-    if (object.isMesh && object.userData.processed === true) {
-      object.visible = false;
-      markerCount++;
-    }
+    if (object.isMesh && object.userData.processed === true) { object.visible = false; markerCount++; }
   });
-
-  const rawBounds = new THREE.Box3().setFromObject(model);
+  // Box3 includes hidden meshes, so measure only colored reconstruction points.
+  model.updateMatrixWorld(true);
+  const pointBounds = new THREE.Box3();
+  model.traverse(object => { if (object.isPoints) pointBounds.expandByObject(object); });
   model.scale.setScalar(SCENE_SCALE_METERS);
-  model.position.set(-rawBounds.getCenter(new THREE.Vector3()).x * SCENE_SCALE_METERS,
-    -rawBounds.min.y * SCENE_SCALE_METERS, -rawBounds.getCenter(new THREE.Vector3()).z * SCENE_SCALE_METERS);
+  const center = pointBounds.getCenter(new THREE.Vector3());
+  model.position.set(-center.x * SCENE_SCALE_METERS, -pointBounds.min.y * SCENE_SCALE_METERS, -center.z * SCENE_SCALE_METERS);
   scene.add(model);
-
-  const bounds = new THREE.Box3().setFromObject(model);
-  const size = bounds.getSize(new THREE.Vector3());
-  // Start just inside the open/front side of the cloud, not outside its whole depth.
+  const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
   homePosition.set(0, 0, Math.max(size.z * 0.32, 1.8));
   homeTarget.set(0, Math.min(1.5, size.y * 0.58), 0);
   resetHome();
   status.textContent = `${pointCount.toLocaleString()} colored points · ${markerCount} camera markers hidden · ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} m`;
-}, undefined, (error) => {
-  console.error(error);
-  status.textContent = 'Could not load dungeon_omega.glb. Serve this folder over HTTP (see README).';
-});
+}, undefined, error => { console.error(error); status.textContent = 'Could not load dungeon_omega.glb. Serve this folder over HTTP (see README).'; });
 
 function moveFromControllers(dt) {
   if (!renderer.xr.isPresenting) return;
@@ -94,8 +67,7 @@ function moveFromControllers(dt) {
   for (const source of renderer.xr.getSession().inputSources) {
     const axes = source.gamepad?.axes;
     if (!axes || axes.length < 2) continue;
-    const x = Math.abs(axes[0]) > 0.15 ? axes[0] : 0;
-    const y = Math.abs(axes[1]) > 0.15 ? axes[1] : 0;
+    const x = Math.abs(axes[0]) > 0.15 ? axes[0] : 0, y = Math.abs(axes[1]) > 0.15 ? axes[1] : 0;
     const wasResetPressed = controllerButtonState.get(source) ?? false;
     const isResetPressed = source.gamepad.buttons[3]?.pressed ?? false;
     if (isResetPressed && !wasResetPressed) resetHome();
@@ -104,16 +76,7 @@ function moveFromControllers(dt) {
     else player.position.addScaledVector(right, x * WALK_SPEED * dt).addScaledVector(forward, -y * WALK_SPEED * dt);
   }
 }
-
 renderer.xr.addEventListener('sessionstart', () => { controls.enabled = false; resetHome(); });
 renderer.xr.addEventListener('sessionend', () => { controls.enabled = true; resetHome(); });
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
-});
-renderer.setAnimationLoop((time) => {
-  const dt = Math.min((time - elapsedLast) / 1000 || 0, 0.1); elapsedLast = time;
-  moveFromControllers(dt);
-  if (!renderer.xr.isPresenting) controls.update();
-  renderer.render(scene, camera);
-});
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+renderer.setAnimationLoop(time => { const dt = Math.min((time - elapsedLast) / 1000 || 0, 0.1); elapsedLast = time; moveFromControllers(dt); if (!renderer.xr.isPresenting) controls.update(); renderer.render(scene, camera); });
