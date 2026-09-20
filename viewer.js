@@ -1,10 +1,11 @@
+
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-// VGGT reconstruction scale is arbitrary. 2.4 gives its ~1-unit Y span a room-like height.
-const SCENE_SCALE_METERS = 2.4;
+// VGGT reconstruction scale is arbitrary. 4.8 makes the reconstructed room human-scale.
+const SCENE_SCALE_METERS = 4.8;
 const WALK_SPEED = 0.45; // meters/sec: deliberately slow for comfort.
 const TURN_SPEED = 1.15; // radians/sec
 
@@ -56,13 +57,11 @@ loader.load('./dungeon_omega.glb', (gltf) => {
   model.traverse((object) => {
     if (object.isPoints) {
       pointCount += object.geometry.attributes.position.count;
-      // Preserve COLOR_0 explicitly; GLB's mesh material is not a point material.
       object.material = new THREE.PointsMaterial({
         size: 0.012, sizeAttenuation: true, vertexColors: true,
         depthTest: true, depthWrite: true, transparent: false
       });
     }
-    // The 21 processed, indexed triangle meshes are VGGT camera frusta, not room data.
     if (object.isMesh && object.userData.processed === true) {
       object.visible = false;
       markerCount++;
@@ -77,7 +76,8 @@ loader.load('./dungeon_omega.glb', (gltf) => {
 
   const bounds = new THREE.Box3().setFromObject(model);
   const size = bounds.getSize(new THREE.Vector3());
-  homePosition.set(0, 0, Math.max(size.z * 1.4, 3.7));
+  // Start just inside the open/front side of the cloud, not outside its whole depth.
+  homePosition.set(0, 0, Math.max(size.z * 0.32, 1.8));
   homeTarget.set(0, Math.min(1.5, size.y * 0.58), 0);
   resetHome();
   status.textContent = `${pointCount.toLocaleString()} colored points · ${markerCount} camera markers hidden · ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} m`;
@@ -96,7 +96,6 @@ function moveFromControllers(dt) {
     if (!axes || axes.length < 2) continue;
     const x = Math.abs(axes[0]) > 0.15 ? axes[0] : 0;
     const y = Math.abs(axes[1]) > 0.15 ? axes[1] : 0;
-    // A/X is the third face button on Quest Touch controllers. Trigger only on press.
     const wasResetPressed = controllerButtonState.get(source) ?? false;
     const isResetPressed = source.gamepad.buttons[3]?.pressed ?? false;
     if (isResetPressed && !wasResetPressed) resetHome();
