@@ -22,4 +22,4 @@ Controls: left stick walks at 0.45 m/s; right stick turns smoothly at a delibera
 
 - `geometry_0`: glTF primitive mode `POINTS`, 1,000,000 vertices; `POSITION` is float32 VEC3 (12 MB), and `COLOR_0` is normalized unsigned-byte RGBA (4 MB).
 - `geometry_1` through `geometry_21`: 21 indexed triangle meshes with `extras.processed: true`, 14 vertices and 48 triangles each. These are colored camera-frustum markers and are hidden in the viewer, not removed from the GLB.
-- The shared root transform is almost exactly a 180° rotation around X, giving Three.js a Y-up view. Unscaled reconstruction bounds are X 1.472, Y 0.996, Z 2.620 GLB units. Since VGGT reconstruction scale has no absolute unit, `SCENE_SCALE_METERS = 2.4` is an adjustable initial human-scale estimate.
+- The shared root transform is almost exactly a 180° rotation around X, giving Three.js a Y-up view. Unscaled reconstruction bounds are X 1.472, Y 0.996, Z 2.620 GLB units. Since VGGT reconstruction scale has no absolute unit, `SCENE_SCALE_METERS = 4.8` is an adjustable initial human-scale estimate.

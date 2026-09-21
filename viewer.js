@@ -3,8 +3,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-// VGGT reconstruction scale is arbitrary. 2.4 gives its ~1-unit Y span a room-like height.
-const SCENE_SCALE_METERS = 2.4;
+// VGGT reconstruction scale is arbitrary. 4.8 makes the reconstructed room human-scale.
+const SCENE_SCALE_METERS = 4.8;
 const WALK_SPEED = 0.45; // meters/sec: deliberately slow for comfort.
 const TURN_SPEED = 1.15; // radians/sec
 
@@ -69,15 +69,47 @@ loader.load('./dungeon_omega.glb', (gltf) => {
     }
   });
 
-  const rawBounds = new THREE.Box3().setFromObject(model);
+  // Camera frusta are hidden above, but Box3 still includes invisible objects.
+  // Ground the room from the actual colored reconstruction only.
+  model.updateMatrixWorld(true);
+  const pointBounds = new THREE.Box3();
+  model.traverse((object) => {
+    if (object.isPoints) pointBounds.expandByObject(object);
+  });
+  // VGGT leaves a few sparse points below the dense floor. Choose the lowest
+  // occupied 10% of the point cloud rather than the single lowest outlier.
+  const FLOOR_QUANTILE = 0.10;
+  const FLOOR_BINS = 2048;
+  const floorHistogram = new Uint32Array(FLOOR_BINS);
+  const floorRange = pointBounds.max.y - pointBounds.min.y;
+  model.traverse((object) => {
+    if (!object.isPoints) return;
+    const positions = object.geometry.attributes.position;
+    const elements = object.matrixWorld.elements;
+    for (let index = 0; index < positions.count; index++) {
+      const localIndex = index * positions.itemSize;
+      const worldY = elements[1] * positions.array[localIndex] + elements[5] * positions.array[localIndex + 1] + elements[9] * positions.array[localIndex + 2] + elements[13];
+      const bin = Math.min(FLOOR_BINS - 1, Math.max(0, Math.floor((worldY - pointBounds.min.y) / floorRange * FLOOR_BINS)));
+      floorHistogram[bin]++;
+    }
+  });
+  const floorTarget = pointCount * FLOOR_QUANTILE;
+  let accumulated = 0;
+  let floorBin = 0;
+  for (; floorBin < FLOOR_BINS - 1; floorBin++) {
+    accumulated += floorHistogram[floorBin];
+    if (accumulated >= floorTarget) break;
+  }
+  const floorY = pointBounds.min.y + (floorBin + 0.5) / FLOOR_BINS * floorRange;
   model.scale.setScalar(SCENE_SCALE_METERS);
-  model.position.set(-rawBounds.getCenter(new THREE.Vector3()).x * SCENE_SCALE_METERS,
-    -rawBounds.min.y * SCENE_SCALE_METERS, -rawBounds.getCenter(new THREE.Vector3()).z * SCENE_SCALE_METERS);
+  model.position.set(-pointBounds.getCenter(new THREE.Vector3()).x * SCENE_SCALE_METERS,
+    -floorY * SCENE_SCALE_METERS, -pointBounds.getCenter(new THREE.Vector3()).z * SCENE_SCALE_METERS);
   scene.add(model);
 
   const bounds = new THREE.Box3().setFromObject(model);
   const size = bounds.getSize(new THREE.Vector3());
-  homePosition.set(0, 0, Math.max(size.z * 1.4, 3.7));
+  // Start just inside the open/front side of the cloud, not outside its whole depth.
+  homePosition.set(0, 0, Math.max(size.z * 0.32, 1.8));
   homeTarget.set(0, Math.min(1.5, size.y * 0.58), 0);
   resetHome();
   status.textContent = `${pointCount.toLocaleString()} colored points · ${markerCount} camera markers hidden · ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} m`;
