@@ -14,11 +14,14 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070c);
+scene.fog = new THREE.FogExp2(0x05070c, 0.022);
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.02, 100);
 const player = new THREE.Group();
 player.add(camera);
@@ -34,6 +37,24 @@ let homePosition = new THREE.Vector3(0, 0, 3.7);
 let homeTarget = new THREE.Vector3(0, 1.4, 0);
 let elapsedLast = 0;
 const controllerButtonState = new WeakMap();
+
+function createSplatTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(32, 32, 2, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.62, 'rgba(255,255,255,0.95)');
+  gradient.addColorStop(0.88, 'rgba(255,255,255,0.35)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+const splatTexture = createSplatTexture();
 
 function resetHome() {
   player.position.copy(homePosition);
@@ -58,8 +79,9 @@ loader.load('./dungeon_omega.glb', (gltf) => {
       pointCount += object.geometry.attributes.position.count;
       // Preserve COLOR_0 explicitly; GLB's mesh material is not a point material.
       object.material = new THREE.PointsMaterial({
-        size: 0.012, sizeAttenuation: true, vertexColors: true,
-        depthTest: true, depthWrite: true, transparent: false
+        map: splatTexture, size: 0.019, sizeAttenuation: true, vertexColors: true,
+        depthTest: true, depthWrite: true, transparent: true, alphaTest: 0.18,
+        opacity: 0.96, fog: true
       });
     }
     // The 21 processed, indexed triangle meshes are VGGT camera frusta, not room data.
